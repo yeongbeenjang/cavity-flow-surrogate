@@ -1,0 +1,499 @@
+<title>Cavity Flow Surrogate</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
+<style>
+/* Layout: lab-report column, live instrument first, then numbered findings that mirror the notebook's Observe/Check prompts. */
+:root {
+  --paper: #f4f6f7; --sheet: #ffffff; --ink: #15222c; --muted: #566773; --rule: #d6dee3;
+  --cfd: #1768c4; --nn: #d9661c; --good: #1d7f4e; --warn: #b4232c; --tint: #e9f1f8;
+  --f-display: "Pretendard Variable", Pretendard, -apple-system, "Segoe UI", "Malgun Gothic", system-ui, sans-serif;
+  --f-body: "Pretendard Variable", Pretendard, -apple-system, "Segoe UI", "Malgun Gothic", system-ui, sans-serif;
+  --f-data: "Pretendard Variable", Pretendard, -apple-system, "Segoe UI", "Malgun Gothic", system-ui, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #0f161c; --sheet: #16212a; --ink: #e3ebf0; --muted: #98a9b5; --rule: #2a3a46;
+    --cfd: #5aa2f0; --nn: #f0904a; --good: #49c486; --warn: #f0707a; --tint: #1b2b38; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --paper: #0f161c; --sheet: #16212a; --ink: #e3ebf0; --muted: #98a9b5; --rule: #2a3a46;
+  --cfd: #5aa2f0; --nn: #f0904a; --good: #49c486; --warn: #f0707a; --tint: #1b2b38; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--paper); letter-spacing: -0.005em; color: var(--ink); font: 15.5px/1.7 var(--f-body); }
+.wrap { max-width: 1080px; margin: 0 auto; padding-block: 28px 64px;
+        padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+header { display: grid; gap: 6px; margin-bottom: 22px; }
+.eyebrow { font: 500 12px/1.4 var(--f-data); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+h1 { font: 600 clamp(30px, 5vw, 44px)/1.1 var(--f-display); margin: 0; text-wrap: balance; letter-spacing: -.01em; }
+h2 { font: 600 24px/1.25 var(--f-display); margin: 0; text-wrap: balance; }
+h3 { font: 600 16px/1.4 var(--f-body); margin: 0; }
+.lede { max-width: 68ch; color: var(--muted); margin: 0; }
+.byline { margin: 0; font-size: 15px; color: var(--ink); }
+.warnbox { font-size: 12.5px; line-height: 1.5; padding: 7px 10px; border-radius: 6px; background: var(--tint); border-left: 3px solid var(--nn); }
+.band-note { font-size: 12.5px; color: var(--muted); }
+p { margin: 0; max-width: 68ch; }
+.num { font-family: var(--f-data); font-variant-numeric: tabular-nums; font-size: .93em; }
+.cfd { color: var(--cfd); font-weight: 600; } .nn { color: var(--nn); font-weight: 600; }
+
+.instrument { display: grid; grid-template-columns: 280px minmax(0, 1fr); gap: 0; background: var(--sheet);
+              border: 1px solid var(--rule); border-radius: 10px; overflow: hidden; }
+.controls { padding: 18px; border-right: 1px solid var(--rule); display: grid; gap: 14px; align-content: start; }
+.plot { padding: 14px; min-width: 0; }
+@media (max-width: 760px) { .instrument { grid-template-columns: 1fr; } .controls { border-right: 0; border-bottom: 1px solid var(--rule); } }
+.field { display: grid; gap: 6px; }
+.field label, .lbl { font: 600 13px/1.3 var(--f-body); }
+.row { display: flex; gap: 8px; align-items: center; }
+input[type=range] { flex: 1; min-width: 0; accent-color: var(--nn); }
+input[type=number], select { font: inherit; font-size: 14px; padding: 5px 8px; border: 1px solid var(--rule); border-radius: 6px; background: var(--paper); color: var(--ink); }
+input[type=number] { width: 86px; font-family: var(--f-data); }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chips button { font: 500 12.5px var(--f-data); padding: 3px 9px; border: 1px solid var(--rule); border-radius: 99px; background: var(--paper); color: var(--ink); cursor: pointer; }
+.chips button:hover, .chips button:focus-visible { border-color: var(--nn); outline: none; }
+.check { font: 13px/1.5 var(--f-body); padding: 8px 10px; border-radius: 6px; border: 1px solid var(--good); color: var(--good); }
+.small { font-size: 13px; color: var(--muted); }
+canvas { display: block; width: 100%; height: auto; }
+label.inline { display: flex; gap: 8px; align-items: center; font-weight: 500; font-size: 14px; }
+
+.tabs { display: flex; gap: 4px; padding: 0 0 12px; border-bottom: 1px solid var(--rule); margin-bottom: 12px; flex-wrap: wrap; }
+.tabs button { font: 600 13px var(--f-body); padding: 6px 12px; border: 0; border-radius: 6px; background: transparent; color: var(--muted); cursor: pointer; }
+.tabs button[aria-selected="true"] { background: var(--tint); color: var(--ink); }
+.tabs button:focus-visible { outline: 2px solid var(--nn); }
+.triple { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+@media (max-width: 620px) { .triple { grid-template-columns: 1fr; } }
+.triple figure { margin: 0; display: grid; gap: 4px; }
+.triple figcaption { font: 600 12.5px var(--f-body); text-align: center; }
+
+main { display: grid; gap: 44px; margin-top: 40px; }
+section.finding { display: grid; grid-template-columns: 56px minmax(0, 1fr); gap: 0 18px; }
+.idx { font: 600 30px/1 var(--f-display); color: var(--rule); padding-top: 2px; }
+.body { display: grid; gap: 14px; min-width: 0; }
+.qa { font-size: 13px; color: var(--muted); border-left: 2px solid var(--rule); padding-left: 10px; }
+.charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; }
+.chart { background: var(--sheet); border: 1px solid var(--rule); border-radius: 8px; padding: 12px; min-width: 0; }
+.chart h3 { font-size: 13.5px; margin-bottom: 4px; }
+.legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12.5px; color: var(--muted); }
+.legend i { display: inline-block; width: 18px; height: 3px; vertical-align: middle; margin-right: 5px; border-radius: 2px; }
+svg { display: block; width: 100%; height: auto; overflow: visible; }
+.tbl-wrap { overflow-x: auto; }
+table { border-collapse: collapse; font-size: 14px; min-width: 420px; }
+th, td { padding: 6px 12px; border-bottom: 1px solid var(--rule); text-align: right; }
+th:first-child, td:first-child { text-align: left; }
+th { font: 600 12.5px var(--f-body); color: var(--muted); }
+td { font-family: var(--f-data); font-variant-numeric: tabular-nums; }
+.bars { display: grid; gap: 8px; }
+.bar { display: grid; grid-template-columns: 26px minmax(0, 1fr) 46px; gap: 10px; align-items: center; font-size: 13px; }
+.bar .track { height: 12px; background: var(--tint); border-radius: 3px; overflow: hidden; }
+.bar .fill { height: 100%; background: var(--nn); }
+footer { margin-top: 48px; padding-top: 16px; border-top: 1px solid var(--rule); font-size: 13px; color: var(--muted); display: grid; gap: 6px; }
+@media (max-width: 560px) { section.finding { grid-template-columns: 1fr; } .idx { font-size: 22px; } }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>Cavity Flow Surrogate</h1>
+    <p class="byline">By <strong>/*AUTHOR*/</strong></p>
+    <p class="lede">A square cavity whose top wall slides to the right. A neural network reads only (x, y, Re) and predicts (u, v, p).
+      The instrument below runs the trained weights directly; the sections after it compare that prediction with the CFD reference.</p>
+  </header>
+
+  <div class="instrument">
+    <div class="controls">
+      <div class="tabs" role="tablist">
+        <button id="tabLive" role="tab" aria-selected="true">Any Re &middot; NN</button>
+        <button id="tabCmp" role="tab" aria-selected="false">Test cases &middot; vs CFD</button>
+        <button id="tabExt" role="tab" aria-selected="false">Re 300&ndash;1000 &middot; vs CFD</button>
+      </div>
+      <div id="liveCtl" class="field">
+        <label for="reRange">Reynolds number, Re</label>
+        <div class="row">
+          <input id="reRange" type="range" min="20" max="1000" step="0.1" value="137">
+          <input id="reNum" type="number" min="20" max="1000" step="0.1" value="137">
+        </div>
+        <div class="chips" id="chips"></div>
+        <div id="extWarn" class="warnbox" hidden>Re &gt; 300 is outside the training range (20&ndash;300). This is extrapolation.</div>
+      </div>
+      <div id="cmpCtl" class="field" hidden>
+        <label for="caseSel">Test case (Re not used in training)</label>
+        <select id="caseSel"></select>
+      </div>
+      <div id="extCtl" class="field" hidden>
+        <label for="extRange">Reynolds number, Re (CFD reference every 50)</label>
+        <div class="row">
+          <input id="extRange" type="range" min="300" max="1000" step="50" value="500">
+          <output id="extOut" class="num" for="extRange">500</output>
+        </div>
+        <div class="chips" id="extChips"></div>
+        <div class="warnbox">The model was trained on Re 20&ndash;300 only. These CFD runs are references for checking, never used for training.</div>
+      </div>
+      <div class="field">
+        <label for="qty">Quantity</label>
+        <select id="qty">
+          <option value="speed">Speed / U_lid</option>
+          <option value="u">u / U_lid</option>
+          <option value="v">v / U_lid</option>
+          <option value="p">p / (&rho; U_lid&sup2;)</option>
+        </select>
+      </div>
+      <label class="inline"><input id="streams" type="checkbox" checked> Streamlines</label>
+      <div id="check" class="check">Verifying</div>
+      <div class="small" id="meta"></div>
+    </div>
+    <div class="plot">
+      <div id="livePlot"><canvas id="cLive" role="img" aria-label="Neural-network prediction heatmap"></canvas></div>
+      <div id="cmpPlot" hidden>
+        <div class="triple">
+          <figure><figcaption class="cfd">CFD reference</figcaption><canvas id="cCfd" role="img" aria-label="CFD reference"></canvas></figure>
+          <figure><figcaption class="nn">NN prediction</figcaption><canvas id="cNn" role="img" aria-label="NN prediction"></canvas></figure>
+          <figure><figcaption>Error (NN &minus; CFD)</figcaption><canvas id="cErr" role="img" aria-label="Prediction error"></canvas></figure>
+        </div>
+        <p class="small" style="margin-top:6px">CFD and NN panels share one colour scale for the selected quantity. The error panel uses its own symmetric scale.</p>
+        <p class="small" id="cmpStats" style="margin-top:8px"></p>
+      </div>
+    </div>
+  </div>
+
+  <main>
+    <section class="finding">
+      <div class="idx">1</div>
+      <div class="body">
+        <h2>The physics in the picture</h2>
+        <p>Viscosity lets the moving lid drag the fluid just beneath it, and that sets up a single <b>clockwise primary vortex</b> filling the cavity.
+          That is why the speed map is bright only just below the lid (speed &asymp; 1) and dark in the middle. The vortex centre is the point where the velocity is zero.</p>
+        <p>Re = UL/&nu; is the ratio of inertia to viscosity; here U = L = 1, so &nu; = 1/Re. At low Re viscosity dominates and the vortex is nearly symmetric left to right (centre x &asymp; 0.55).
+          As Re grows, inertia carries the fluid downstream toward the right wall, and the centre moves <b>right and down</b> (x &asymp; 0.61, y &asymp; 0.67 at Re 300).</p>
+        <p>Pressure is <b>high in the top-right corner</b>, where fluid carried by the lid runs into the wall (a stagnation point), and <b>low in the top-left corner</b>, where fluid is pulled away from the wall.
+          The dimensionless pressure p/(&rho;U&sup2;) shrinks as Re grows: viscous pressure scales as &mu;U/L, so after dividing by &rho;U&sup2; it goes as 1/Re.
+          In the CFD, the top-right corner pressure is <span class="num" id="pc20"></span> at Re 20 and <span class="num" id="pc300"></span> at Re 300.</p>
+      </div>
+    </section>
+
+    <section class="finding">
+      <div class="idx">2</div>
+      <div class="body">
+        <h2>What the network gets right: where the vortex sits and how strong it is</h2>
+        <p>Over the 10 Test cases (Re values held out of training) the error is about 1.5% of the lid speed:
+          RMSE <span class="num" id="rmseLine"></span>. More importantly, the network follows <b>how the vortex centre moves with Re</b>.
+          One grid cell is 0.02 wide, and the NN centre stays within one cell of the CFD centre in most cases.
+          Vortex strength (the minimum of the streamfunction &psi;) matches the CFD to within 3%.</p>
+        <div class="charts">
+          <div class="chart"><h3>Vortex centre x vs Re</h3><svg id="chX"></svg></div>
+          <div class="chart"><h3>Vortex centre y vs Re</h3><svg id="chY"></svg></div>
+        </div>
+        <div class="legend"><span><i style="background:var(--cfd)"></i>CFD</span><span><i style="background:var(--nn)"></i>NN</span><span>Hollow markers = Test cases</span></div>
+        <p class="qa">Sanity check: at Re 100 this CFD puts the centre at <span class="num" id="c100"></span>, close to the high-resolution benchmark of Ghia et al. (1982), (0.617, 0.734). Even the coarse 50 &times; 50 reference captures the primary vortex well.</p>
+      </div>
+    </section>
+
+    <section class="finding">
+      <div class="idx">3</div>
+      <div class="body">
+        <h2>Where the error remains: the lid and the two top corners</h2>
+        <p>Share of the Test-case squared error that falls in the <b>top 10% band (y &gt; 0.9)</b>. The band is only a tenth of the area, yet it holds most of the error.</p>
+        <div class="bars" id="bars"></div>
+        <p>The cause is the <b>corner singularity</b>. Where the lid (u = 1) meets a side wall (u = 0), the velocity jumps, and in theory the pressure becomes unbounded.
+          A smooth function with two tanh hidden layers of 32 nodes cannot represent such sharp peaks, so it <b>flattens</b> them.</p>
+        <div class="tbl-wrap"><table id="cornerTbl"></table></div>
+        <div class="chart"><h3>RMSE per case vs Re (all 50 cases)</h3><svg id="chR"></svg>
+          <div class="legend" style="margin-top:6px"><span><i style="background:var(--cfd)"></i>u</span><span><i style="background:var(--good)"></i>v</span><span><i style="background:var(--nn)"></i>p</span><span>Hollow = Test, filled = Train</span></div></div>
+        <p>The error is largest at the ends of the range, especially the <b>pressure near Re 20</b>, even though that is a Train case.
+          Low-Re pressure peaks are both larger (1/Re scaling) and sharper, while the output normalization uses one standard deviation for all Re, so these extremes carry relatively little weight in training.
+          Cases at the ends of the range also have training neighbours on one side only.</p>
+      </div>
+    </section>
+
+    <section class="finding">
+      <div class="idx">4</div>
+      <div class="body">
+        <h2>Physical laws are not guaranteed</h2>
+        <p>The network was trained only to fit the CFD data with MSE. The continuity equation &part;u/&part;x + &part;v/&part;y = 0 was never imposed as a constraint; this is not a PINN.
+          Applying the same central difference to the cell-centred values of both fields gives the RMS divergence below (closer to zero means better mass conservation).</p>
+        <div class="tbl-wrap"><table id="divTbl"></table></div>
+        <p>The NN field diverges 3&ndash;5 times more than the CFD field. The CFD value is not zero only because it is computed from cell-centred averages; on the solver's own MAC grid the divergence is about 10<sup>&minus;15</sup>.
+          For the same reason, the <b>small secondary eddies in the bottom corners</b> cannot be trusted. In the CFD their strength grows with Re from 4&times;10<sup>&minus;6</sup> to 1&times;10<sup>&minus;4</sup>,
+          while the NN gives about 2&times;10<sup>&minus;3</sup> regardless of Re. The streamlines that curl in those corners are error, not physics.</p>
+      </div>
+    </section>
+
+    <section class="finding">
+      <div class="idx">5</div>
+      <div class="body">
+        <h2>Why it can predict a new Re without running CFD</h2>
+        <p class="qa">Notebook Check question: once training finishes, why can the model predict a new Reynolds condition without running CFD again?</p>
+        <p>Re is an <b>input</b>, and the 40 training cases were learned together, so the network has learned one function (x, y, Re) &rarr; (u, v, p) that is continuous in Re.
+          A new Re is just a new input to that function. Evaluating it is a fixed-weight matrix product over 2,500 cells, about 1,200 multiplications per cell.
+          One NN field takes <span class="num">about 7 ms</span>; one CFD case needs thousands of time steps and took <span class="num">about 3 s</span>.</p>
+        <p>This holds only for <b>interpolation inside the training range</b>. Section 6 tests what happens outside it.</p>
+      </div>
+    </section>
+
+    <section class="finding">
+      <div class="idx">6</div>
+      <div class="body">
+        <h2>Outside the training range: Re 300&ndash;1000</h2>
+        <p>The network was trained on Re 20&ndash;300 and is used here unchanged. For checking only, 15 new CFD cases were solved at Re = 300, 350, &hellip;, 1000
+          with the notebook's own solver. Every case met the notebook's acceptance limits (steady residual &lt; 2&times;10<sup>&minus;5</sup>, divergence RMS &lt; 10<sup>&minus;8</sup>),
+          and the new Re 300 field is identical to the training-set Re 300 field (max difference <span class="num" id="solverCheck"></span>), so both data sets come from the same solver.
+          Use the <b>Re 300&ndash;1000 &middot; vs CFD</b> tab above to see any of them side by side with the network.</p>
+        <div class="charts">
+          <div class="chart"><h3>Vortex centre x vs Re</h3><svg id="chEx"></svg></div>
+          <div class="chart"><h3>Vortex strength |&psi;<sub>min</sub>| vs Re</h3><svg id="chEp"></svg></div>
+        </div>
+        <div class="legend"><span><i style="background:var(--cfd)"></i>CFD</span><span><i style="background:var(--nn)"></i>NN</span><span>&#9670; Ghia et al. (1982)</span><span>Shaded = training range</span></div>
+        <p><b>The clearest failure is the vortex centre, which moves the wrong way.</b> In the CFD, beyond Re 300 the centre turns back toward the middle and sinks
+          (x 0.611 &rarr; 0.565, y 0.665 &rarr; 0.608 from Re 300 to 1000), the same direction as the high-resolution benchmark.
+          The network keeps the trend it saw near Re 300: its centre runs to the right until it reaches the wall (x &asymp; 0.99 at Re 950&ndash;1000, which no cavity flow does).</p>
+        <p><b>Vortex strength is harder to judge.</b> The network's |&psi;<sub>min</sub>| grows about 40% (0.099 &rarr; 0.138), this CFD's falls (0.095 &rarr; 0.079),
+          and the benchmark rises more gently (0.103 at Re 100 to 0.118 at Re 1000). The falling CFD value is an artefact of its coarse grid (see the note below), so the safe reading is
+          that the network overshoots both references. Close to the boundary the agreement is still reasonable: at Re 350 the velocity RMSE is about 2&ndash;3% of the lid speed.</p>
+        <div class="chart"><h3>RMSE per case vs Re, inside and outside the training range</h3><svg id="chER"></svg>
+          <div class="legend" style="margin-top:6px"><span><i style="background:var(--cfd)"></i>u</span><span><i style="background:var(--good)"></i>v</span><span><i style="background:var(--nn)"></i>p</span><span>Shaded = training range</span></div></div>
+        <div class="tbl-wrap"><table id="extTbl"></table></div>
+        <p><b>Why it breaks.</b> The network sees Re through the normalization z = (Re &minus; 160) / 82.6, so training covered z = &minus;1.7 to 1.7, and Re 1000 is z = 10.2.
+          That far out, 41% of the first-layer tanh units are saturated (6% at Re 300), and the output is driven by whichever units are still on their slopes.
+          Nothing in the training data tells the network that the vortex must turn back, so it extends the slope it learned. Between Re 900 and 1000 its field still changes about
+          seven times more than the CFD field does (RMS change 0.024 vs 0.003).</p>
+        <p class="qa">About the reference: a 50 &times; 50 first-order upwind solver is numerically diffusive, so at high Re it behaves like a lower Re. Against the benchmark of Ghia et al.,
+          its centre is (0.597, 0.643) vs (0.555, 0.606) at Re 400 and (0.565, 0.608) vs (0.531, 0.563) at Re 1000. It is the right reference for this check because it is the same solver
+          that produced the training data, but it is not a grid-independent solution.</p>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div>Model: MLP, Tanh, 2 &times; 32 hidden nodes. CFD: 50 &times; 50 MAC-grid reference, not grid-independent.</div>
+    <div>The vortex centre is the minimum of the streamfunction &psi;(x, y) = &int;<sub>0</sub><sup>y</sup> u dy, refined by parabolic interpolation.</div>
+  </footer>
+</div>
+
+<script id="page-data" type="application/json">/*DATA*/</script>
+<script>
+"use strict";
+const D = JSON.parse(document.getElementById('page-data').textContent);
+const M = D.model, N = 50;
+// The exported JSON has no test_rmse; pool it from the 10 Test cases (same as the notebook's Test RMSE).
+if (!M.test_rmse) {
+  const t = D.cases.filter(c => c.test);
+  M.test_rmse = Object.fromEntries(['u', 'v', 'p'].map((n, k) => [n, Math.sqrt(t.reduce((s, c) => s + c.rmse[k] ** 2, 0) / t.length)]));
+}
+const $ = id => document.getElementById(id);
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+
+/* ---------- MLP forward pass (exported weights) ---------- */
+const layers = M.layers.map(L => L.type === 'Linear'
+  ? { lin: true, o: L.weight.length, i: L.weight[0].length, W: Float64Array.from(L.weight.flat()), b: Float64Array.from(L.bias) }
+  : { lin: false });
+function predictField(re) {
+  const f = new Float64Array(N * N * 3); let a = new Float64Array(32), z = new Float64Array(32);
+  for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
+    const inp = [(i + .5) / N, (j + .5) / N, re];
+    for (let k = 0; k < 3; k++) a[k] = (inp[k] - M.input_mean[k]) / M.input_std[k];
+    let w = 3;
+    for (const L of layers) {
+      if (L.lin) { for (let o = 0; o < L.o; o++) { let s = L.b[o]; for (let q = 0; q < L.i; q++) s += L.W[o * L.i + q] * a[q]; z[o] = s; } [a, z] = [z, a]; w = L.o; }
+      else for (let q = 0; q < w; q++) a[q] = Math.tanh(a[q]);
+    }
+    const c = (j * N + i) * 3;
+    for (let k = 0; k < 3; k++) f[c + k] = a[k] * M.output_std[k] + M.output_mean[k];
+  }
+  return f;
+}
+function fromGrid(g) { const f = new Float64Array(N * N * 3); for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) for (let k = 0; k < 3; k++) f[(j * N + i) * 3 + k] = g[j][i][k]; return f; }
+function values(f, q) { const v = new Float64Array(N * N); for (let c = 0; c < N * N; c++) { const u = f[c * 3], w = f[c * 3 + 1]; v[c] = q === 'speed' ? Math.hypot(u, w) : q === 'u' ? u : q === 'v' ? w : f[c * 3 + 2]; } return v; }
+
+/* verification against the Python outputs shipped in the JSON */
+(function verify() {
+  let err = 0;
+  M.verification.inputs.forEach((x, r) => {
+    const i = x[0] * N - .5, j = x[1] * N - .5;   // evaluate exactly at the point, not a grid cell
+    const a0 = [x[0], x[1], x[2]].map((v, k) => (v - M.input_mean[k]) / M.input_std[k]);
+    let a = a0, w;
+    for (const L of layers) a = L.lin ? Array.from({ length: L.o }, (_, o) => L.b[o] + a.reduce((s, v, q) => s + L.W[o * L.i + q] * v, 0)) : a.map(Math.tanh);
+    a.forEach((v, k) => { err = Math.max(err, Math.abs(v * M.output_std[k] + M.output_mean[k] - M.verification.outputs[r][k])); });
+  });
+  $('check').textContent = `PASS: max |JS − Python| = ${err.toExponential(2)} (tolerance 1e-5, 12 points)`;
+  if (err >= 1e-5) { $('check').style.color = 'var(--warn)'; $('check').style.borderColor = 'var(--warn)'; $('check').textContent = $('check').textContent.replace('PASS', 'FAIL'); }
+  const r = M.test_rmse || {};
+  $('meta').textContent = `Tanh 2 × 32, 100 epochs · Test RMSE u ${(+r.u).toFixed(4)}, v ${(+r.v).toFixed(4)}, p ${(+r.p).toFixed(4)}`;
+})();
+
+/* ---------- colour maps + heatmap ---------- */
+const VIR = [[68,1,84],[71,44,122],[59,81,139],[44,113,142],[33,144,141],[39,173,129],[92,200,99],[170,220,50],[253,231,37]];
+const CW = [[59,76,192],[98,130,234],[141,176,254],[184,208,249],[221,221,221],[245,196,173],[244,154,123],[222,96,77],[180,4,38]];
+function cmap(t, T) { t = Math.min(1, Math.max(0, Number.isFinite(t) ? t : 0)) * (T.length - 1); const i = Math.min(T.length - 2, Math.floor(t)), f = t - i; return T[i].map((c, k) => Math.round(c + f * (T[i + 1][k] - c))); }
+function sampleUV(f, x, y) {
+  const gx = Math.min(N - 1.001, Math.max(0, x * N - .5)), gy = Math.min(N - 1.001, Math.max(0, y * N - .5));
+  const i = Math.floor(gx), j = Math.floor(gy), fx = gx - i, fy = gy - j, at = (ii, jj, k) => f[(jj * N + ii) * 3 + k];
+  const l = k => (1 - fy) * ((1 - fx) * at(i, j, k) + fx * at(i + 1, j, k)) + fy * ((1 - fx) * at(i, j + 1, k) + fx * at(i + 1, j + 1, k));
+  return [l(0), l(1)];
+}
+function streamlines(f) {
+  const out = [], S = 10, ds = .006;
+  for (let a = 0; a < S; a++) for (let b = 0; b < S; b++) { if ((a + b) % 2) continue;
+    for (const dir of [1, -1]) { let x = (a + .5) / S, y = (b + .5) / S; const pts = [[x, y]];
+      for (let s = 0; s < 150; s++) { const [u1, v1] = sampleUV(f, x, y), m1 = Math.hypot(u1, v1); if (m1 < 1e-4) break;
+        const [u2, v2] = sampleUV(f, x + dir * .5 * ds * u1 / m1, y + dir * .5 * ds * v1 / m1), m2 = Math.hypot(u2, v2); if (m2 < 1e-4) break;
+        x += dir * ds * u2 / m2; y += dir * ds * v2 / m2; if (x <= .005 || x >= .995 || y <= .005 || y >= .995) break; pts.push([x, y]); }
+      if (pts.length > 4) out.push(pts); } }
+  return out;
+}
+const LBL = { speed: 'Speed / U_lid', u: 'u / U_lid', v: 'v / U_lid', p: 'p / (ρ U_lid²)' };
+const cell = document.createElement('canvas'); cell.width = cell.height = N;
+
+function heatmap(canvas, f, vals, q, range, opts) {
+  const host = canvas.parentElement, cssW = Math.max(220, host.clientWidth || 0);
+  const compact = !!opts.compact, cssH = Math.round(cssW * (compact ? 1.08 : .8)), dpr = window.devicePixelRatio || 1;
+  canvas.width = Math.round(cssW * dpr); canvas.height = Math.round(cssH * dpr); canvas.style.height = cssH + 'px';
+  const ctx = canvas.getContext('2d'); ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, cssW, cssH);
+  const ink = css('--ink'), T = opts.diverging ? CW : VIR, [lo, hi] = range;
+  const c = cell.getContext('2d'), img = c.createImageData(N, N);
+  for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) { const [r, g, b] = cmap((vals[j * N + i] - lo) / (hi - lo), T), o = ((N - 1 - j) * N + i) * 4; img.data.set([r, g, b, 255], o); }
+  c.putImageData(img, 0, 0);
+  const padL = compact ? 30 : 46, padT = compact ? 6 : 24, cbW = 12, gap = 12, cbLab = compact ? 38 : 66, padB = compact ? 52 : 40;
+  const side = Math.max(100, Math.min(cssW - padL - gap - cbW - cbLab, cssH - padT - padB));
+  ctx.imageSmoothingEnabled = false; ctx.drawImage(cell, padL, padT, side, side);
+  if (opts.streams && f) { ctx.save(); ctx.beginPath(); ctx.rect(padL, padT, side, side); ctx.clip();
+    ctx.strokeStyle = q === 'speed' && !opts.diverging ? 'rgba(255,255,255,.72)' : 'rgba(15,25,40,.5)'; ctx.lineWidth = .9;
+    for (const p of streamlines(f)) { ctx.beginPath(); p.forEach(([x, y], k) => { const X = padL + x * side, Y = padT + (1 - y) * side; k ? ctx.lineTo(X, Y) : ctx.moveTo(X, Y); }); ctx.stroke(); }
+    ctx.restore(); }
+  ctx.strokeStyle = ink; ctx.fillStyle = ink; ctx.lineWidth = 1; ctx.strokeRect(padL, padT, side, side);
+  ctx.font = `${compact ? 10 : 11.5}px "Pretendard Variable", Pretendard, sans-serif`;
+  for (const t of compact ? [0, .5, 1] : [0, .25, .5, .75, 1]) {
+    ctx.textAlign = 'center'; ctx.textBaseline = 'top'; ctx.fillText(t, padL + t * side, padT + side + 4);
+    ctx.textAlign = 'right'; ctx.textBaseline = 'middle'; ctx.fillText(t, padL - 5, padT + (1 - t) * side);
+  }
+  ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic'; ctx.font = `${compact ? 10.5 : 12}px "Pretendard Variable", Pretendard, sans-serif`;
+  ctx.fillText('x / L', padL + side / 2, padT + side + (compact ? 28 : 32));
+  ctx.save(); ctx.translate(compact ? 9 : 12, padT + side / 2); ctx.rotate(-Math.PI / 2); ctx.fillText('y / L', 0, 0); ctx.restore();
+  if (opts.title) { ctx.font = '600 12.5px "Pretendard Variable", Pretendard, sans-serif'; ctx.fillText(opts.title, padL + side / 2, 15); }
+  const cx = padL + side + gap;
+  for (let s = 0; s < side; s++) { const [r, g, b] = cmap(1 - s / side, T); ctx.fillStyle = `rgb(${r},${g},${b})`; ctx.fillRect(cx, padT + s, cbW, 1); }
+  ctx.strokeStyle = ink; ctx.strokeRect(cx, padT, cbW, side); ctx.fillStyle = ink;
+  ctx.font = `${compact ? 9.5 : 11}px "Pretendard Variable", Pretendard, sans-serif`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  const ticks = compact ? 2 : 4, span = hi - lo;
+  for (let k = 0; k <= ticks; k++) ctx.fillText((lo + span * k / ticks).toFixed(span < .2 ? 3 : 2), cx + cbW + 3, padT + side * (1 - k / ticks));
+  if (!compact) { ctx.save(); ctx.translate(cx + cbW + 56, padT + side / 2); ctx.rotate(Math.PI / 2); ctx.textAlign = 'center'; ctx.font = '11.5px "Pretendard Variable", Pretendard, sans-serif'; ctx.fillText(LBL[q] + ' (dimensionless)', 0, 0); ctx.restore(); }
+  else { ctx.textAlign = 'center'; ctx.font = '10px "Pretendard Variable", Pretendard, sans-serif'; ctx.fillText(opts.diverging && opts.err ? 'error in ' + LBL[q] : LBL[q], padL + side / 2, padT + side + 44); }
+}
+function minmax(v) { let a = Infinity, b = -Infinity; for (const x of v) { a = Math.min(a, x); b = Math.max(b, x); } return [a, b]; }
+
+/* ---------- live + compare views ---------- */
+const FIXED = (() => { const r = { speed: [0, 0], u: [0, 0], v: [0, 0], p: [0, 0] };
+  for (const re of [20, 60, 100, 150, 200, 250, 300, 400, 550, 700, 850, 1000]) { const f = predictField(re); for (const q in r) { const [a, b] = minmax(values(f, q)); r[q] = [Math.min(r[q][0], a), Math.max(r[q][1], b)]; } }
+  r.speed[0] = 0; for (const q of ['u', 'v', 'p']) { const m = Math.max(...r[q].map(Math.abs)); r[q] = [-m, m]; } return r; })();
+let mode = 'live', liveField = null;
+const testKeys = Object.keys(D.cfd_test);
+testKeys.forEach((k, n) => { const o = document.createElement('option'); o.value = k; o.textContent = `Test ${n + 1}/10 · Re = ${(+k).toFixed(1)}`; $('caseSel').append(o); });
+$('caseSel').value = testKeys[4];
+const RE_MIN = 20, RE_MAX = 1000, TRAIN_MAX = 300;
+const reNow = () => Math.min(RE_MAX, Math.max(RE_MIN, parseFloat($('reNum').value) || parseFloat($('reRange').value)));
+const extKeys = Object.keys(D.cfd_ext);
+function render() {
+  const q = $('qty').value, st = $('streams').checked;
+  if (mode === 'live') {
+    if (!liveField) liveField = predictField(reNow());
+    const outside = reNow() > TRAIN_MAX;
+    $('extWarn').hidden = !outside;
+    heatmap($('cLive'), liveField, values(liveField, q), q, FIXED[q], { streams: st, diverging: q !== 'speed',
+      title: `Neural-network prediction | Re = ${reNow().toFixed(1)}${outside ? ' (extrapolation)' : ''}` });
+  } else {
+    // Same Re, same quantity, one shared colour scale for CFD and NN.
+    const key = mode === 'ext' ? $('extRange').value : $('caseSel').value, re = +key;
+    const cf = fromGrid(mode === 'ext' ? D.cfd_ext[key] : D.cfd_test[key]), nf = predictField(re);
+    const cv = values(cf, q), nv = values(nf, q), ev = nv.map((v, i) => v - cv[i]);
+    const [a1, b1] = minmax(cv), [a2, b2] = minmax(nv); let lo = Math.min(a1, a2), hi = Math.max(b1, b2);
+    if (q !== 'speed') { const m = Math.max(Math.abs(lo), Math.abs(hi)); lo = -m; hi = m; } else lo = 0;
+    const em = Math.max(1e-6, ...Array.from(ev, Math.abs));
+    heatmap($('cCfd'), cf, cv, q, [lo, hi], { streams: st, diverging: q !== 'speed', compact: true });
+    heatmap($('cNn'), nf, nv, q, [lo, hi], { streams: st, diverging: q !== 'speed', compact: true });
+    heatmap($('cErr'), null, ev, q, [-em, em], { diverging: true, compact: true, err: true });
+    const rm = Math.sqrt(ev.reduce((s, v) => s + v * v, 0) / ev.length);
+    const tag = mode === 'ext' ? (re > TRAIN_MAX ? 'extrapolation' : 'training-range edge') : 'held-out Test case';
+    $('cmpStats').textContent = `Re = ${re.toFixed(re % 1 ? 2 : 0)} (${tag}) · ${LBL[q]} RMSE ${rm.toFixed(4)} · max |error| ${em.toFixed(4)}. The NN field is recomputed from the weights; the CFD field is a stored reference used only for comparison.`;
+  }
+}
+function setExt(re) { const k = String(Math.round(Math.min(1000, Math.max(300, re)) / 50) * 50); $('extRange').value = k; $('extOut').textContent = k; schedule(); }
+$('extRange').addEventListener('input', e => setExt(+e.target.value));
+$('extChips').append(...[300, 400, 500, 700, 1000].map(re => { const b = document.createElement('button'); b.textContent = 'Re ' + re; b.onclick = () => setExt(re); return b; }));
+let pend = false; const schedule = () => { if (pend) return; pend = true; requestAnimationFrame(() => { pend = false; render(); }); setTimeout(() => { if (pend) { pend = false; render(); } }, 120); };
+function setRe(re, src) { if (!Number.isFinite(re)) return; re = Math.min(RE_MAX, Math.max(RE_MIN, re)); if (src !== 'r') $('reRange').value = re; if (src !== 'n') $('reNum').value = re; liveField = predictField(re); schedule(); }
+$('reRange').addEventListener('input', e => setRe(+e.target.value, 'r'));
+$('reNum').addEventListener('input', e => { const v = parseFloat(e.target.value); if (Number.isFinite(v)) setRe(v, 'n'); });
+$('reNum').addEventListener('change', e => { const v = parseFloat(e.target.value); if (Number.isFinite(v)) setRe(v); else e.target.value = $('reRange').value; });
+$('chips').append(...[20, 137, 300, 500, 1000].map(re => { const b = document.createElement('button'); b.textContent = 'Re ' + re; b.onclick = () => setRe(re); return b; }));
+for (const id of ['qty', 'streams', 'caseSel']) $(id).addEventListener('change', schedule);
+function setMode(m) {
+  mode = m;
+  for (const [id, k] of [['tabLive', 'live'], ['tabCmp', 'cmp'], ['tabExt', 'ext']]) $(id).setAttribute('aria-selected', m === k);
+  $('liveCtl').hidden = m !== 'live'; $('cmpCtl').hidden = m !== 'cmp'; $('extCtl').hidden = m !== 'ext';
+  $('livePlot').hidden = m !== 'live'; $('cmpPlot').hidden = m === 'live'; schedule();
+}
+$('tabLive').onclick = () => setMode('live'); $('tabCmp').onclick = () => setMode('cmp'); $('tabExt').onclick = () => setMode('ext');
+if ('ResizeObserver' in window) new ResizeObserver(schedule).observe(document.querySelector('.plot')); else addEventListener('resize', schedule);
+window.matchMedia?.('(prefers-color-scheme: dark)').addEventListener?.('change', () => { schedule(); drawCharts(); });
+new MutationObserver(() => { schedule(); drawCharts(); }).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+document.fonts?.ready.then(() => { schedule(); });
+
+/* ---------- findings: numbers + SVG charts ---------- */
+const C = D.cases, tests = C.filter(c => c.test), fmt = (v, d = 4) => (+v).toFixed(d);
+$('pc20').textContent = D.corner_p['20'].cfd[1].toFixed(2); $('pc300').textContent = D.corner_p['300'].cfd[1].toFixed(2);
+$('rmseLine').textContent = `u ${fmt(M.test_rmse.u)}, v ${fmt(M.test_rmse.v)}, p ${fmt(M.test_rmse.p)}`;
+const c100 = C.reduce((a, b) => Math.abs(b.re - 100) < Math.abs(a.re - 100) ? b : a); $('c100').textContent = `(${fmt(c100.cfd_center[0], 3)}, ${fmt(c100.cfd_center[1], 3)})`;
+$('bars').innerHTML = ['u', 'v', 'p'].map((n, k) => { const s = D.top_band_share[k] * 100; return `<div class="bar"><span class="num">${n}</span><div class="track"><div class="fill" style="width:${s}%"></div></div><span class="num">${s.toFixed(0)}%</span></div>`; }).join('');
+$('cornerTbl').innerHTML = `<tr><th>Corner pressure p/(ρU²)</th><th>CFD top-left</th><th>NN top-left</th><th>CFD top-right</th><th>NN top-right</th></tr>` +
+  ['20', '300'].map(r => { const c = D.corner_p[r]; return `<tr><td>Re ${r}</td><td>${c.cfd[0].toFixed(2)}</td><td>${c.nn[0].toFixed(2)}</td><td>${c.cfd[1].toFixed(2)}</td><td>${c.nn[1].toFixed(2)}</td></tr>`; }).join('');
+const dv = tests.map(c => c.div);
+$('divTbl').innerHTML = `<tr><th>Divergence RMS (10 Test cases)</th><th>CFD</th><th>NN</th><th>NN / CFD</th></tr>` +
+  [['Lowest', Math.min], ['Highest', Math.max]].map(([n, f]) => { const a = f(...dv.map(d => d[0])), b = f(...dv.map(d => d[1])); return `<tr><td>${n}</td><td>${a.toFixed(3)}</td><td>${b.toFixed(3)}</td><td>${(b / a).toFixed(1)}×</td></tr>`; }).join('');
+const E = D.ext_cases;
+$('solverCheck').textContent = D.solver_check.toExponential(1);
+const pair = a => `(${a[0].toFixed(3)}, ${a[1].toFixed(3)})`;
+$('extTbl').innerHTML = `<tr><th>Re</th><th>RMSE u</th><th>RMSE v</th><th>RMSE p</th><th>Centre CFD</th><th>Centre NN</th><th>|&psi;<sub>min</sub>| CFD</th><th>|&psi;<sub>min</sub>| NN</th></tr>` +
+  E.filter(c => [300, 400, 500, 700, 1000].includes(Math.round(c.re))).map(c =>
+    `<tr><td>${Math.round(c.re)}</td>${c.rmse.map(v => `<td>${v.toFixed(3)}</td>`).join('')}<td>${pair(c.cfd_center)}</td><td>${pair(c.nn_center)}</td>` +
+    `<td>${Math.abs(c.cfd_psi).toFixed(3)}</td><td>${Math.abs(c.nn_psi).toFixed(3)}</td></tr>`).join('');
+
+function lineChart(svg, series, o) {
+  const W = 420, H = 230, L = 46, R = 10, T = 10, B = 34, ink = css('--muted'), rule = css('--rule');
+  const xs = x => L + (x - o.x[0]) / (o.x[1] - o.x[0]) * (W - L - R), ys = y => o.log ? T + (1 - (Math.log10(y) - Math.log10(o.y[0])) / (Math.log10(o.y[1]) - Math.log10(o.y[0]))) * (H - T - B) : T + (1 - (y - o.y[0]) / (o.y[1] - o.y[0])) * (H - T - B);
+  let s = `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" font-family="'Pretendard Variable', Pretendard, sans-serif" font-size="10.5">`;
+  for (const t of o.yt) s += `<line x1="${L}" x2="${W - R}" y1="${ys(t)}" y2="${ys(t)}" stroke="${rule}" stroke-width="1"/><text x="${L - 6}" y="${ys(t) + 3.5}" text-anchor="end" fill="${ink}">${t}</text>`;
+  for (const t of o.xt) s += `<text x="${xs(t)}" y="${H - B + 15}" text-anchor="middle" fill="${ink}">${t}</text>`;
+  s += `<line x1="${L}" x2="${W - R}" y1="${H - B}" y2="${H - B}" stroke="${ink}"/><text x="${(L + W - R) / 2}" y="${H - 4}" text-anchor="middle" fill="${ink}" font-family="'Pretendard Variable', Pretendard, sans-serif" font-size="11">${o.xl}</text>`;
+  s += `<text transform="translate(11 ${(T + H - B) / 2}) rotate(-90)" text-anchor="middle" fill="${ink}" font-family="'Pretendard Variable', Pretendard, sans-serif" font-size="11">${o.yl}</text>`;
+  if (o.band) s += `<rect x="${xs(o.band[0])}" y="${T}" width="${xs(o.band[1]) - xs(o.band[0])}" height="${H - T - B}" fill="${css('--tint')}"/>` +
+    `<text x="${(xs(o.band[0]) + xs(o.band[1])) / 2}" y="${T + 12}" text-anchor="middle" fill="${ink}" font-size="10">training range</text>`;
+  for (const t of o.yt) s += `<line x1="${L}" x2="${W - R}" y1="${ys(t)}" y2="${ys(t)}" stroke="${rule}" stroke-width="1" opacity=".7"/>`;
+  for (const se of series) {
+    s += `<polyline fill="none" stroke="${se.color}" stroke-width="1.8" points="${se.pts.map(p => xs(p[0]) + ',' + ys(p[1])).join(' ')}"/>`;
+    for (const p of se.pts) s += p[2] ? `<circle cx="${xs(p[0])}" cy="${ys(p[1])}" r="3.4" fill="${css('--sheet')}" stroke="${se.color}" stroke-width="1.6"/>` : `<circle cx="${xs(p[0])}" cy="${ys(p[1])}" r="2" fill="${se.color}"/>`;
+  }
+  // Benchmark points drawn as diamonds in the text colour.
+  for (const [x, y] of o.marks || []) s += `<path d="M${xs(x)} ${ys(y) - 5}l5 5-5 5-5-5z" fill="${css('--ink')}"/>`;
+  svg.outerHTML = s.replace('<svg ', `<svg id="${svg.id}" role="img" aria-label="${o.aria}" `) + '</svg>';
+}
+function drawCharts() {
+  const cfd = css('--cfd'), nn = css('--nn'), good = css('--good');
+  lineChart($('chX'), [{ color: cfd, pts: C.map(c => [c.re, c.cfd_center[0], c.test]) }, { color: nn, pts: C.map(c => [c.re, c.nn_center[0], c.test]) }],
+    { x: [20, 300], y: [.52, .66], xt: [20, 100, 200, 300], yt: [.54, .58, .62, .66], xl: 'Reynolds number, Re', yl: 'x_c / L', aria: 'Vortex centre x versus Re' });
+  lineChart($('chY'), [{ color: cfd, pts: C.map(c => [c.re, c.cfd_center[1], c.test]) }, { color: nn, pts: C.map(c => [c.re, c.nn_center[1], c.test]) }],
+    { x: [20, 300], y: [.64, .78], xt: [20, 100, 200, 300], yt: [.66, .70, .74, .78], xl: 'Reynolds number, Re', yl: 'y_c / L', aria: 'Vortex centre y versus Re' });
+  lineChart($('chR'), ['u', 'v', 'p'].map((n, k) => ({ color: [cfd, good, nn][k], pts: C.map(c => [c.re, Math.max(c.rmse[k], 1e-3), c.test]) })),
+    { x: [20, 300], y: [.005, .2], log: true, xt: [20, 100, 200, 300], yt: [.005, .01, .02, .05, .1, .2], xl: 'Reynolds number, Re', yl: 'RMSE (log scale)', aria: 'RMSE versus Re for u, v and p' });
+  // Full range: training-range cases plus the Re 350-1000 checks (Re 300 appears in both sets; keep one).
+  const all = C.concat(E.filter(c => c.re > 300)), G = D.ghia, GP = D.ghia_psi, xt = [20, 200, 400, 600, 800, 1000];
+  lineChart($('chEx'), [{ color: cfd, pts: all.map(c => [c.re, c.cfd_center[0]]) }, { color: nn, pts: all.map(c => [c.re, c.nn_center[0]]) }],
+    { x: [20, 1000], y: [.5, 1], xt, yt: [.5, .6, .7, .8, .9, 1], band: [20, 300], marks: Object.entries(G).map(([r, c]) => [+r, c[0]]),
+      xl: 'Reynolds number, Re', yl: 'x_c / L', aria: 'Vortex centre x versus Re from 20 to 1000, CFD, NN and benchmark' });
+  lineChart($('chEp'), [{ color: cfd, pts: all.map(c => [c.re, -c.cfd_psi]) }, { color: nn, pts: all.map(c => [c.re, -c.nn_psi]) }],
+    { x: [20, 1000], y: [.07, .15], xt, yt: [.08, .10, .12, .14], band: [20, 300], marks: Object.entries(GP).map(([r, v]) => [+r, v]),
+      xl: 'Reynolds number, Re', yl: '|psi_min|', aria: 'Vortex strength versus Re from 20 to 1000, CFD, NN and benchmark' });
+  lineChart($('chER'), ['u', 'v', 'p'].map((n, k) => ({ color: [cfd, good, nn][k], pts: all.map(c => [c.re, Math.max(c.rmse[k], 1e-3)]) })),
+    { x: [20, 1000], y: [.005, .3], log: true, xt, yt: [.005, .01, .02, .05, .1, .2], band: [20, 300],
+      xl: 'Reynolds number, Re', yl: 'RMSE (log scale)', aria: 'RMSE versus Re from 20 to 1000 for u, v and p' });
+}
+drawCharts();
+setRe(137);
+</script>
